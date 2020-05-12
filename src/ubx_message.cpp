@@ -1,9 +1,11 @@
-
 #include "ubx_message.h"
-
 #include <string.h>
 
-UbxMessage::UbxMessage(uint8_t* buffer, uint16_t size) : state_(DeserializationState::kHeader0),
+static constexpr uint16_t kPayloadOverheadSize = 8;
+static constexpr uint8_t kUbxHeader0 = 0xb5;
+static constexpr uint8_t kUbxHeader1 = 0x62;
+
+UbxMessage::UbxMessage(uint8_t* buffer, uint16_t size) : state_(),
                                                          packet_(),
                                                          payload_counter_(),
                                                          kMaxPayloadSize_(size),
@@ -28,8 +30,8 @@ uint8_t& UbxMessage::operator[](uint16_t index) {
 
 void UbxMessage::Init(bool set_headers) {
     if (set_headers) {
-        this->packet_.header_0_ = 0xb5;
-        this->packet_.header_1_ = 0x62;
+        this->packet_.header_0_ = kUbxHeader0;
+        this->packet_.header_1_ = kUbxHeader1;
     } else {
         this->packet_.header_0_ = 0;
         this->packet_.header_1_ = 0;
@@ -46,7 +48,7 @@ void UbxMessage::Init(bool set_headers) {
         memset(this->packet_.payload_, 0, this->kMaxPayloadSize_);
     }
 
-    this->ResetState();
+    this->state_.Reset();
     this->payload_counter_ = 0;
 }
 
@@ -112,58 +114,62 @@ uint16_t UbxMessage::Length() const {
            static_cast<uint16_t>(this->packet_.length_1_) << 8;
 }
 
+uint16_t UbxMessage::Size(){
+	return this->Length() + kPayloadOverheadSize;
+}
+
 bool UbxMessage::Deserialize(uint8_t byte) {
-    switch (this->state_) {
-        case DeserializationState::kHeader0:
-            if (byte == 0xb5) {
+    switch (this->state_.Current()) {
+        case UbxPacketField::kHeader0:
+            if (byte == kUbxHeader0) {
                 this->packet_.header_0_ = byte;
-                this->IncrementState();
+                this->state_.Increment();
             }
             break;
-        case DeserializationState::kHeader1:
-            if (byte == 0x62) {
+        case UbxPacketField::kHeader1:
+            if (byte == kUbxHeader1) {
                 this->packet_.header_1_ = byte;
-                this->IncrementState();
+                this->state_.Increment();
             } else {
-                this->ResetState();
+            	this->state_.Reset();
             }
             break;
-        case DeserializationState::kClass:
+        case UbxPacketField::kClass:
             this->packet_.class_ = byte;
-            this->IncrementState();
+            this->state_.Increment();
             break;
-        case DeserializationState::kId:
+        case UbxPacketField::kId:
             this->packet_.id_ = byte;
-            this->IncrementState();
+            this->state_.Increment();
             break;
-        case DeserializationState::kLength0:
+        case UbxPacketField::kLength0:
             this->packet_.length_0_ = byte;
-            this->IncrementState();
+            this->state_.Increment();
             break;
-        case DeserializationState::kLength1:
+        case UbxPacketField::kLength1:
             this->packet_.length_1_ = byte;
             this->payload_counter_ = 0;
-            this->IncrementState();
+            this->state_.Increment();
             break;
-        case DeserializationState::kPayload:
-            if (this->payload_counter_ < this->Length()) {
-                if (this->packet_.payload_) {
-                    if (this->payload_counter_ < this->kMaxPayloadSize_) {
-                        this->packet_.payload_[this->payload_counter_++] = byte;
-                    }
-                }
-                break;
+        case UbxPacketField::kPayload:
+            if (this->packet_.payload_) {
+				if (this->payload_counter_ < this->Length()) {
+					if (this->payload_counter_ < this->kMaxPayloadSize_) {
+						this->packet_.payload_[this->payload_counter_++] = byte;
+						break;
+					}
+				}
             }
 
-            this->IncrementState();
+            this->state_.Increment();
 
-        case DeserializationState::kChecksumA:
+        case UbxPacketField::kChecksumA:
             this->packet_.chk_a_ = byte;
-            this->IncrementState();
+            this->state_.Increment();
             break;
-        case DeserializationState::kChecksumB:
+        case UbxPacketField::kChecksumB:
             this->packet_.chk_b_ = byte;
-            this->ResetState();
+        	this->state_.Reset();
             return true;
         default:
             break;
@@ -173,7 +179,7 @@ bool UbxMessage::Deserialize(uint8_t byte) {
 
 uint16_t UbxMessage::Serialize(uint8_t* buffer, uint16_t size) {
     const uint16_t kPayloadLength = this->Length();
-    const uint16_t kPacketSize = kPayloadLength + 8;
+    const uint16_t kPacketSize = kPayloadLength + kPayloadOverheadSize;
     if (size < kPacketSize) {
         return 0;
     }
@@ -202,21 +208,56 @@ uint16_t UbxMessage::Serialize(uint8_t* buffer, uint16_t size) {
     return write_index;
 }
 
-UbxMessage::DeserializationState UbxMessage::FirstState() const {
-    return DeserializationState::kHeader0;
-}
-UbxMessage::DeserializationState UbxMessage::LastState() const {
-    return DeserializationState::kChecksumB;
-}
+bool UbxMessage::Serialize(uint8_t& byte){
+	switch (this->state_.Current()) {
+		case UbxPacketField::kHeader0:
+			byte = this->packet_.header_0_;
+			this->state_.Increment();
+			break;
+		case UbxPacketField::kHeader1:
+			byte = this->packet_.header_1_;
+			this->state_.Increment();
+			break;
+		case UbxPacketField::kClass:
+			byte = this->packet_.class_;
+			this->state_.Increment();
+			break;
+		case UbxPacketField::kId:
+			byte = this->packet_.id_;
+			this->state_.Increment();
+			break;
+		case UbxPacketField::kLength0:
+			byte = this->packet_.length_0_;
+			this->state_.Increment();
+			break;
+		case UbxPacketField::kLength1:
+			byte = this->packet_.length_1_;
+			this->payload_counter_ = 0;
+			this->state_.Increment();
+			break;
+		case UbxPacketField::kPayload:
 
-void UbxMessage::IncrementState() {
-    if (this->state_ == this->LastState()) {
-        this->state_ = this->FirstState();
-    } else {
-        const int16_t kIncState = static_cast<int16_t>(this->state_) + 1;
-        this->state_ = static_cast<DeserializationState>(kIncState);
-    }
-}
-void UbxMessage::ResetState() {
-    this->state_ = this->FirstState();
+			if (this->packet_.payload_){
+				if (this->payload_counter_ < this->Length()) {
+					if(this->payload_counter_ < this->kMaxPayloadSize_){
+						byte = this->packet_.payload_[this->payload_counter_++];
+						break;
+					}
+				}
+			}
+
+			this->state_.Increment();
+
+		case UbxPacketField::kChecksumA:
+			byte = this->packet_.chk_a_;
+			this->state_.Increment();
+			break;
+		case UbxPacketField::kChecksumB:
+			byte = this->packet_.chk_b_;
+			this->state_.Reset();
+			return false;
+		default:
+			break;
+	}
+	return true;
 }
