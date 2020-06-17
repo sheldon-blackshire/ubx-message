@@ -8,6 +8,9 @@ Ublox Ubx-protocol message Serialize/Deserialize c++ class intended for small em
  
 ## Serialize
 
+    /*
+     * First create a UbxMessage.
+     */
     const uint16_t kMemorySize = 32;
 	uint8_t kMemoryPool[kMemorySize] = {0};
 	UbxMessage message(kMemoryPool, kMemorySize);
@@ -24,9 +27,31 @@ Ublox Ubx-protocol message Serialize/Deserialize c++ class intended for small em
 	message[5] = 0;
 
 	message.Update();
+	
+     /* 
+      * Option 1: Serialize into a seperate buffer.
+      */
+	
 	const uint8_t kSerializedBufferSize = 32;
 	uint8_t serialized_buffer[kSerializedBufferSize] = {0};
 	const uint16_t kMessageLength = message.Serialize(serialized_buffer, kSerializedBufferSize);
+     /* 
+      * Option 2: Serialize byte-by-byte
+      */
+      
+      	uint16_t bw = 0;
+	while(true){
+		uint8_t byte = 0;
+		const bool kFinished = message->Serialize(byte) == false;
+
+		// Do something here with the byte (Send to Uart, print to screen, ...etc)
+
+		bw++;
+
+		if(kFinished){
+			break;
+		}
+	}
 
 ## Deserialize
 
