@@ -45,6 +45,8 @@ public:
 	void Length(uint16_t len);
 	uint16_t Length() const;
 
+	const uint8_t* Payload() const {return packet_.payload_;}
+
 	void Class(uint8_t c) {packet_.class_ = c;}
 	uint8_t Class() const {return packet_.class_;}
 
@@ -52,6 +54,7 @@ public:
 	uint8_t Id() const {return packet_.id_;}
 
 	uint16_t Size();
+	static uint8_t OverheadSize() {return 8;}
 
 	/*
 	 * Access the message payload using array notation.
@@ -82,7 +85,7 @@ public:
 	 * set_headers is true, 0xb5 and 0x62 are populated for the packet header instead
 	 * of zeros (This is useful for packet construction).
 	 */
-	void Init(bool set_headers);
+	void Init(bool set_headers, bool zero_memory = true);
 
 	/*
 	 * Updates the packet checksum. This function must be called after making any
@@ -113,9 +116,7 @@ public:
 	 * over a communication interface). A buffer must be provided that will house the
 	 * serialized message, as well as the max size of the buffer. The length of the serialized
 	 * packet is returned on success. Zero is returned if the supplied input buffer size was
-	 * not large enough. 
-     * 
-     * Note: Endianness is handled internally for the packet overhead, but
+	 * not large enough. Endianness is handled internally for the packet overhead, but
 	 * its the client responsibility to make the payload endianness consistent with Ublox
 	 * documentation.
 	 *
@@ -123,13 +124,12 @@ public:
 	 */
 	uint16_t Serialize(uint8_t* buffer, uint16_t size);
 
-
     /*
      *  Serializes contents of this Ublox message. Each time the function is called, the next
      *  byte in the message is retrieved. The function returns true when serialization is on-going
      *  and false when the last serialized byte is retrieved. This means that one byte must be
-     *  managed after a false value is returned. 
-     * 
+     *  managed after a false value is returned.
+     *
      * Note: Endianness is handled internally for the packet overhead, but
 	 * its the client responsibility to make the payload endianness consistent with Ublox
 	 * documentation.

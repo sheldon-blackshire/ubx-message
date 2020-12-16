@@ -28,7 +28,7 @@ uint8_t& UbxMessage::operator[](uint16_t index) {
     }
 }
 
-void UbxMessage::Init(bool set_headers) {
+void UbxMessage::Init(bool set_headers, bool zero_memory) {
     if (set_headers) {
         this->packet_.header_0_ = kUbxHeader0;
         this->packet_.header_1_ = kUbxHeader1;
@@ -45,7 +45,9 @@ void UbxMessage::Init(bool set_headers) {
     this->packet_.chk_b_ = 0;
 
     if (this->packet_.payload_) {
-        memset(this->packet_.payload_, 0, this->kMaxPayloadSize_);
+    	if(zero_memory){
+    		memset(this->packet_.payload_, 0, this->kMaxPayloadSize_);
+    	}
     }
 
     this->state_.Reset();
